@@ -1,7 +1,6 @@
 using Random 
 Random.seed!(1234)
 using BenchmarkTools
-using ViewReader 
 
 const LIBSAIS = "/home/codegodz/tools/fais/libsais/libsais.so.2"
 const MASK = Int32(1<<30) 
