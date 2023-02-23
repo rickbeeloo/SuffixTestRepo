@@ -105,7 +105,7 @@ end
 
 function matches_till(ref::AbstractVector{Int32}, ref_start::Int32, ca::Vector{Int32}, q_start::Int32)
     (ref_start > length(ref) || q_start > length(ca)) && return 0
-    smallest_n = min(length(ref)-ref_start, length(ca)-q_start)
+    smallest_n = min(length(ref)-ref_start+1, length(ca)-q_start+1)
     for i::Int32 in 1:smallest_n
         if ref[ref_start + i - 1] != ca[q_start+i-1]
             return Int32(i - 1)
@@ -114,46 +114,19 @@ function matches_till(ref::AbstractVector{Int32}, ref_start::Int32, ca::Vector{I
     return smallest_n
 end
 
-function get_inital_match(ca::Vector{Int32}, sa::Vector{Int32}, ref::AbstractVector{Int32})
-    # First we find where to insert the sequence in the suffix array 
-    sa_insert_index = locate_insert_point(sa, ca, ref)
-    # Now either up, down or nothing can be the longest match 
-    # check up 
-    if sa_insert_index - 1 > 0
-        rm_size = matches_till(ref, Int32(1), ca, sa[sa_insert_index-1])
-    else
-        rm_size = 0 
-    end 
 
-    if sa_insert_index <= length(sa)
-        lm_size = matches_till(ref, Int32(1), ca, sa[sa_insert_index])
-    else
-        lm_size = 0
-    end
-
-    if lm_size > rm_size 
-        max_match_size = lm_size
-        max_match_index = sa_insert_index-Int32(1)
-    else 
-        max_match_size = rm_size  # Could be 0 but we check this in the return
-        max_match_index = sa_insert_index
-    end 
-
-    return Int32(max_match_index), Int32(max_match_size)
-end
-
-function extend_from_point(ca::Vector{Int32}, sa::Vector{Int32}, ref::Vector{Int32}, lcp::Vector{Int32}, point::Int32, prev_match_size::Int32, forward::Bool)
+function extend_from_point(ca::Vector{Int32}, sa::Vector{Int32}, ref::Vector{Int32}, lcp::Vector{Int32}, point::Int32, forward::Bool)
     # When we have a seeding point we have to extend in both directions
     move_dir = forward ? 1 : -1
     lcp_dir = forward  ? 0 :  1
     matches = 0
 
     i = point += move_dir
-    while i >= 1 && i <= length(sa) && lcp[i + lcp_dir] > 0
+    while i >= 1 && i < length(sa) && lcp[i + lcp_dir] > 0
         # We can skip the LCP part when extending
         start_check_from = lcp[i + lcp_dir]
         # Check the size of this match starting from +1 of the LCP value
-        println("Starting check form: ", start_check_from)
+        #println("Starting check form: ", start_check_from)
         match_size =  matches_till(ref, start_check_from + Int32(1), ca, sa[i + move_dir]) 
         match_size += start_check_from
         println("(M): Match at: ", i, " of size: ", match_size)
@@ -163,51 +136,71 @@ function extend_from_point(ca::Vector{Int32}, sa::Vector{Int32}, ref::Vector{Int
     return matches
 end
 
+function check_this_point(ca::Vector{Int32}, sa::Vector{Int32}, ref::AbstractVector{Int32}, ref_start::Int32, point::Int32, skip::Int32)
+    # Given a point in the suffix array, compare the suffix to the Ref 
+    ca_suffix_index = sa[point]
+    ca_start = ca_suffix_index + skip
+    ref_start = ref_start + skip
+    match_size = matches_till(ref, ref_start, ca, ca_start) 
+    match_size += skip 
+    match_size > 0 && println("(M): Match at: ", point, " of size: ", match_size)
+    return match_size
+end
+
+function decide_on_seed(insert_point::Int32, ca::Vector{Int32}, sa::Vector{Int32}, ref::AbstractVector{Int32}, ref_start::Int32, point::Int32, skip::Int32)
+    # Check left for a match
+    left_of_ip = insert_point > 1 ? check_this_point(ca, sa, view(ref, ref_start:length(ref)), Int32(1), insert_point-Int32(1),  Int32(0)) : 0 
+    left_of_ip > 0 && return insert_point-Int32(1), left_of_ip
+
+    # Check right for a match 
+    right_of_ip = check_this_point(ca, sa, view(ref, ref_start:length(ref)), Int32(1), insert_point, Int32(0))
+    right_of_ip > 0 && return insert_point, right_of_ip
+
+    return 0, 0
+end
 
 function align(ca::Vector{Int32}, sa::Vector{Int32}, ref::Vector{Int32}, inv_perm_sa::Vector{Int32}, lcp::Vector{Int32})
+    ref_start = Int32(1)
+    while ref_start <= length(ref)
 
-    start_in_ref = 1
-    max_match_index = 0
+        # Do binary search to locate the insert point
+        insert_point = locate_insert_point(sa, ca, view(ref, ref_start:length(ref)))
+        
+        
+       
 
-    while start_in_ref <= length(ref)
-        println("Workign on: ", view(ref, start_in_ref:length(ref)))
-        # Find initial location in suffix array 
-        max_match_index, max_match_size = get_inital_match(ca, sa, view(ref,start_in_ref:length(ref)))
-        max_match_index != 0 && println("(M) Initial match at: ",max_match_index, " with size: ", max_match_size)
-        # If we have a match try to scan up and down to find all prefix matches and
-        # use the linked list to keep doing this until we don't find a match anymore
-
-        if max_match_size > 0
+        # If we have a match keep using the linked list to extend 
+        if max_match_size > 0 
             matches = true 
-            while matches
-                println("Workign on 2: ", view(ref, start_in_ref:length(ref)))
-                # Go up
-                println("Going up")
-                up_matches = extend_from_point(ca, sa, ref, lcp, max_match_index, max_match_size, false)
-                println(up_matches)
-                # Go down 
-                println("Going down")
-                down_matches = extend_from_point(ca, sa, ref, lcp, max_match_index, max_match_size, true)
-                # Move to to the next location using the linked list
-                max_match_index = inv_perm_sa[sa[max_match_index]+1]
+            while matches && ref_start <= length(ref)
+                println()
+                println(view(ref, ref_start:length(ref)))
+                max_match_size = check_this_point(ca, sa, ref, ref_start, max_match_index, Int32(max_match_size-1)) # skip k-1
+                ref_start += Int32(1)
+                max_match_size == 0 && break 
+                up_matches = extend_from_point(ca, sa, ref, lcp, max_match_index, false)
+                down_matches = extend_from_point(ca, sa, ref, lcp, max_match_index, true)
                 matches = up_matches > 0 || down_matches > 0
-                start_in_ref +=1
+                max_match_index = inv_perm_sa[sa[max_match_index]+1]
             end 
-        end   
-        start_in_ref +=1
+        else 
+            ref_start += Int32(1)
+        end
     end
 end
 
 function test()
     qs = [Int32[1,2], Int32[1,2,3, 4,1], Int32[1,2, 3, 100, 1, 2]]
-    ref = Int32[2, 3, 10, 1, 2]
+
+    ref = Int32[1,2,3,10,1,2]
+    # #ref = Int32[1,2,3]
     ca, sa = create_k_suffix_array(qs, Int32(0))
     inv_sa_perm = inverse_perm_sa(sa)
     lcp = build_lcp(sa, ca)
 
 
-    println("R: ", ref)
-    println("Q: ", ca)
+    #println("R: ", ref)
+    #println("Q: ", ca)
     println()
     
     println("Suffix array")
@@ -215,20 +208,72 @@ function test()
         println(i, " -> ", view(ca, si:length(sa)))
     end 
 
-    println("\nLCP array")
-    for (i, l) in enumerate(lcp)
-        println(i, " -> ", l)
-    end
+    # println("\nLCP array")
+    # for (i, l) in enumerate(lcp)
+    #     println(i, " -> ", l)
+    # end
   
-    println("\nInv permuted")
-    for i in eachindex(ca) 
-        println("at: ", inv_sa_perm[i], " in the sa: ", view(ca, i:length(ca)))
-    end
-    
+    # println("\nInv permuted")
+    # for i in eachindex(ca) 
+    #     println("at: ", inv_sa_perm[i], " in the sa: ", view(ca, i:length(ca)))
+    # # end
+    # @time for (i, ref) in enumerate(refs)
     align(ca, sa, ref, inv_sa_perm, lcp)
+    # end
    
 
 end
 
 test()
+
+# function main() 
+#     f = "/media/codegodz/TOSHIBA EXT/staph_cuttlefish_graph.gfa_reduced.cf_seq_head-50000"
+#     #f = "/home/codegodz/SuffixTestRepo/sub_test.txt"
+#     queries = Vector{Vector{Int32}}()
+#     refs = Vector{Vector{Int32}}()
+#     count = 0
+#     qs_done = false
+#     q_include = 100
+#     max_count = 110
+#     last_genome_id = ""
+#     for line in eachline(f) 
+#         identifier, path = split(line, "\t")
+#         tag, genome_id, contig_id = split(identifier, "_")
+#         # Get the numbers from the path 
+#         nodes = Int32[]
+#         for node in split(path, " ")
+#             if node[end] == '+'
+#                 mult = 1
+#             else 
+#                 mult = -1
+#             end 
+#             node_id = parse(Int32, node[1:length(node)-1]) * mult
+#             push!(nodes, node_id)
+#         end
+
+#         if genome_id != last_genome_id
+#             count += 1
+#             if count == q_include
+#                 qs_done = true
+#             end
+#             last_genome_id = genome_id
+#         end
+
+#         # Store them
+#         if !qs_done
+#             println("q: ", count)
+#             push!(queries, nodes)
+#         else 
+#             println("r: ", count)
+#             push!(refs, nodes)
+#         end
+#         println(count)
+#         count == max_count && break
+#     end
+#     # Call suffix 
+#     println("Start aln")
+#     test(queries, refs)
+# end
+
+# main()
 
