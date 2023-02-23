@@ -1,13 +1,13 @@
 using Random 
 Random.seed!(1234)
 using BenchmarkTools
-
-const LIBSAIS = "/home/codegodz/tools/fais/libsais/libsais.so.2"
-const MASK = Int32(1<<30) 
-
 using Profile
 using ProfileView
 using StatProfilerHTML
+
+
+const MASK = Int32(1<<30) 
+
 
 struct RefLoc 
     ref_id::Int32 
@@ -41,35 +41,6 @@ function convert_nodes!(in_vector::Vector{Int32})
     end
 end
 
-function concat_with_seperator(vectors::Vector{Vector{Int32}})
-    # Probably a cleaner way to do this :) Like using map 
-    # to flip the node ids in slices and copying the slices to the output
-    total_size = sum(map(length, vectors))
-    concat_arr = zeros(Int32, total_size + length(vectors)) 
-    vect_id = -1 * length(vectors) # to have it decending for sorting
-    for i in eachindex(vectors)
-        convert_nodes!(vectors[i])
-    end
-    # Concat with seperator + store sign in most significant bit
-    i = 1
-    @inbounds for v in vectors
-        for node_id in v 
-            concat_arr[i] = node_id
-            i +=1
-        end 
-        concat_arr[i] = vect_id 
-        vect_id +=1
-        i +=1
-    end
-    return concat_arr
-end
-
-function create_k_suffix_array(vectors::Vector{Vector{Int32}}, free_space::Int32)
-    concat_array = concat_with_seperator(vectors)
-    suffix_array = create_suffix_array(concat_array, free_space)
-    suffix_array .+= 1
-    return concat_array, suffix_array
-end
 
 
 function locate_insert_point(sa::Vector{Int32}, concat_arr::Vector{Int32}, ref::AbstractVector{Int32})
@@ -202,7 +173,8 @@ function test(queries::Vector{Vector{Int32}}, refs::Vector{Vector{Int32}})
     println("\nCreating size map")
     size_map = @time Dict(unique_nodes .=> ones(Int64, length(unique_nodes))) 
     println("Finding longest matches")
-    @profview find_longest_matches!(Int32(2), refs[2], sa, concat_arr, query_colors, size_map)
+    ProfileView.@profview find_longest_matches!(Int32(2), refs[2], sa, concat_arr, query_colors, size_map)
+    #@code_warntype find_longest_matches!(Int32(2), refs[2], sa, concat_arr, query_colors, size_map)
     println("Origins: ",  query_colors.origin[1:20])
     println("Lens: ", query_colors.max_len[1:20])
 end
@@ -211,24 +183,17 @@ end
 
 function main() 
     #f = "/media/codegodz/TOSHIBA EXT/staph_cuttlefish_graph.gfa_reduced.cf_seq_head-50000"
-    f = "sub_test.txt"
+    f = "/home/codegodz/SuffixTestRepo/sub_test.txt"
     queries = Vector{Vector{Int32}}()
     refs = Vector{Vector{Int32}}()
     count = 0
     qs_done = false
     q_include = 5
     max_count = 10
-    
-
     last_genome_id = ""
-    i = 0
     for line in eachline(f) 
-        i +=1
-        println(i)
-
         identifier, path = split(line, "\t")
         tag, genome_id, contig_id = split(identifier, "_")
-
         # Get the numbers from the path 
         nodes = Int32[]
         for node in split(path, " ")
@@ -243,32 +208,22 @@ function main()
 
         if genome_id != last_genome_id
             count += 1
-            
-
             if count == q_include !qs_done
-                println("Querires done, switching to refs")
                 qs_done = true
             end
-
             last_genome_id = genome_id
-
         end
 
         # Store them
         if !qs_done
-            println(count, " Pushign q")
             push!(queries, nodes)
         else 
-            println(count, " Pushing r")
             push!(refs, nodes)
         end
-
         count == max_count && break
-        
     end
     # Call suffix 
     test(queries, refs)
-
 end
 
 main()
