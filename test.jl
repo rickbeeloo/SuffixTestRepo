@@ -105,7 +105,7 @@ end
 
 function matches_till(ref::AbstractVector{Int32}, ref_start::Int32, ca::Vector{Int32}, q_start::Int32)
     (ref_start > length(ref) || q_start > length(ca)) && return 0
-    smallest_n = min(length(ref), length(ca))
+    smallest_n = min(length(ref)-ref_start, length(ca)-q_start)
     for i::Int32 in 1:smallest_n
         if ref[ref_start + i - 1] != ca[q_start+i-1]
             return Int32(i - 1)
@@ -153,6 +153,7 @@ function extend_from_point(ca::Vector{Int32}, sa::Vector{Int32}, ref::Vector{Int
         # We can skip the LCP part when extending
         start_check_from = lcp[i + lcp_dir]
         # Check the size of this match starting from +1 of the LCP value
+        println("Starting check form: ", start_check_from)
         match_size =  matches_till(ref, start_check_from + Int32(1), ca, sa[i + move_dir]) 
         match_size += start_check_from
         println("(M): Match at: ", i, " of size: ", match_size)
