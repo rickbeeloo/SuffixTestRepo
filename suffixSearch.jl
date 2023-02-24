@@ -43,13 +43,13 @@ function create_suffix_array(in_vector::Vector{Int32}, free_space::Int32)
     n = length(in_vector)
     k = maximum(in_vector) +1 
     @ccall LIBSAIS.libsais_int(in_vector::Ptr{Int32}, out_vector::Ptr{Int32}, n::Int32, k::Int32, free_space::Int32)::Int32
-    out_vector .+= 1
     return out_vector
 end
 
 function create_k_suffix_array(vectors::Vector{Vector{Int32}}, free_space::Int32)
     concat_array = concat_with_seperator(vectors)
     suffix_array = create_suffix_array(concat_array, free_space)
+    suffix_array .+= 1
     return concat_array, suffix_array
 end
 
@@ -106,46 +106,13 @@ end
 function matches_till(ref::AbstractVector{Int32}, ref_start::Int32, ca::Vector{Int32}, q_start::Int32)
     (ref_start > length(ref) || q_start > length(ca)) && return 0
     smallest_n = min(length(ref)-ref_start+1, length(ca)-q_start+1)
-    #println("Smalles tn: ", smallest_n)
-    #println("Trying to match ref: ", view(ref,ref_start:length(ref)))
-    #println("Trying to match Q:: ", view(ca,q_start:length(ref)))
     for i::Int32 in 1:smallest_n
+        println("Step taken")
         if ref[ref_start + i - 1] != ca[q_start+i-1]
             return Int32(i - 1)
         end 
     end 
-   # println("full return")
     return Int32(smallest_n)
-end
-
-
-function extend_from_point(ca::Vector{Int32}, sa::Vector{Int32}, ref::Vector{Int32}, lcp::Vector{Int32}, point::Int32, forward::Bool, ref_start::Int32)
-    # When we have a seeding point we have to extend in both directions
-    move_dir = forward ? 1 : -1
-    lcp_dir  = forward ? 0 :  1
-    match_size = Int32(0)
-    matches = 0
-
-    i = point += move_dir
-    # println("Working on forward: ", forward)
-    while i >= 1 && i < length(sa) && lcp[i + lcp_dir] > 0
-        #println("reloop")
-        # We can skip the LCP part when extending, note though we also have to 
-        # check the previous match size so min(lcp valu, prev match size)
-        start_check_from = Int32(min(lcp[i + lcp_dir], match_size))
-        # Check the size of this match starting from +1 of the LCP value)
-        #println("Starting check from: ", start_check_from, " at sa pos: ", i, " and ca pos: ", sa[i])
-        match_size =  matches_till(ref, ref_start + start_check_from, ca, sa[i] + start_check_from) 
-        #match_size = check_this_point(ca, sa, ref, ref_start, sa[i], start )
-        match_size += start_check_from
-        println("(M): Match at: ", i, " of size: ", match_size)
-        matches +=1
-        #ref_start += Int32(1)
-        i += move_dir
-        #println(i, " from: ", length(sa), " and lcp: ", lcp[i + lcp_dir])
-        
-    end
-    return matches
 end
 
 function check_this_point(ca::Vector{Int32}, sa::Vector{Int32}, ref::AbstractVector{Int32}, ref_start::Int32, point::Int32, skip::Int32)
@@ -157,6 +124,30 @@ function check_this_point(ca::Vector{Int32}, sa::Vector{Int32}, ref::AbstractVec
     match_size += skip 
     match_size > 0 && println("INIT (M): Match at: ", point, " of size: ", match_size)
     return match_size
+end
+
+function extend_from_point(ca::Vector{Int32}, sa::Vector{Int32}, ref::Vector{Int32}, lcp::Vector{Int32}, point::Int32, forward::Bool, ref_start::Int32, match_size::Int32)
+    # When we have a seeding point we have to extend in both directions
+    move_dir = forward ? 1 : -1
+    lcp_dir  = forward ? 0 :  1
+    matches = 0
+
+    i = point += move_dir
+    println("Working on forward: ", forward)
+    while i >= 1 && i < length(sa) && lcp[i + lcp_dir] > 0
+        # We can skip the LCP part when extending, note though we also have to 
+        # check the previous match size so min(lcp valu, prev match size)
+        start_check_from = Int32(min(lcp[i + lcp_dir], match_size))
+        println("Skipping: ", start_check_from, " chosen from: ", lcp[i + lcp_dir], " and ", match_size)
+        # Check the size of this match starting from +1 of the LCP value)
+        match_size = check_this_point(ca, sa, ref, ref_start, Int32(i), start_check_from )
+        match_size += start_check_from
+        #println("(M): Match at: ", i, " of size: ", match_size)
+        matches +=1
+        i += move_dir        
+    end
+   # println("exited loop")
+    return matches
 end
 
 function decide_on_seed(insert_point::Int32, ca::Vector{Int32}, sa::Vector{Int32}, ref::AbstractVector{Int32}, ref_start::Int32)
@@ -178,31 +169,22 @@ function align(ca::Vector{Int32}, sa::Vector{Int32}, ref::Vector{Int32}, inv_per
 
         # Do binary search to locate the insert point
         println("\nBinary searching for: ", view(ref, ref_start:length(ref)))
-        #println("Insert lookup: ", view(ref, ref_start:length(ref)) )
         insert_point = locate_insert_point(sa, ca, view(ref, ref_start:length(ref)))
         max_match_index, max_match_size = decide_on_seed(insert_point, ca, sa, ref, ref_start)
-        #println("Found max match at: ", max_match_index, " with size: ", max_match_size)
         # If we have a match keep using the linked list to extend 
         if max_match_size > 0 
             matches = true 
             while matches && ref_start <= length(ref)
-                #println()
                 println("Working on (in loop): ", view(ref, ref_start:length(ref)))
                 # Check the match size at this point
                 max_match_size = check_this_point(ca, sa, ref, ref_start, max_match_index, Int32(max_match_size-1)) # skip k-1
-                # println("max match size: ", max_match_size)
-                
+                        
                 # If we don't have any match we don't have to check the flanks
                 max_match_size == 0 && break 
                 
                 # # Check up and down in suffix array for other matches
-                up_matches = extend_from_point(ca, sa, ref, lcp, max_match_index, false, ref_start)
-                down_matches = extend_from_point(ca, sa, ref, lcp, max_match_index, true, ref_start)
-
-                # # If we still have matches keep going
-                # # could also break here but this will invalidate with the while anyway
-                #matches = up_matches > 0 || down_matches > 0
-                #println("Matches: ", matches)
+                up_matches = extend_from_point(ca, sa, ref, lcp, max_match_index, false, ref_start, max_match_size)
+                down_matches = extend_from_point(ca, sa, ref, lcp, max_match_index, true, ref_start, max_match_size)
 
                 # # Move to next location in suffix array for the second around
                 max_match_index = inv_perm_sa[sa[max_match_index]+1]
