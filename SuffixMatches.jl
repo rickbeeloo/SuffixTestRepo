@@ -228,110 +228,76 @@ function align_forward_and_reverse(ref_id::Int32, color::Color, ca::Vector{Int32
     align(ref_id, color, ca, sa, ref, inv_perm_sa,lcp)
 end
 
-function test()
-    qs = [Int32[1,2,3, 4,1], Int32[1,2, 3, 100]]
-    refs = [Int32[-100, -3, -2, -1],Int32[9, 1, 2, 3, 4, 5]] 
-
+function test(qs, refs)
     println("Building data structures")
     ca, sa = @time create_k_suffix_array(qs, Int32(0))
     inv_sa_perm = @time inverse_perm_sa(sa)
     lcp = @time build_lcp(sa, ca)
 
-    println("Done building")
-
-    # #println("R: ", ref)
-    # println("Q: ", ca)
-    # println("CA")
-    # for (i, c) in enumerate(ca)
-    #     println(i, " -> ", c)
-    # end
-    # println()
-    
-    println("Suffix array")
-    for (i, si) in enumerate(sa)
-        println(i, " -> ", view(ca, si:length(sa)))
-    end 
-
-    # println("\nLCP array")
-    # for (i, l) in enumerate(lcp)
-    #     println(i, " -> ", l)
-    # end
-  
-    # println("\nInv permuted")
-    # for i in eachindex(ca) 
-    #     println("at: ", inv_sa_perm[i], " in the sa: ", view(ca, i:length(ca)))
-    # end
-
-     # Locate the color output arrays and wrap in struct 
      len = zeros(Int32, length(ca))
      ori = zeros(Int32, length(ca))
      color = Color(len, ori)
-     #ref_id = Int32(1) 
-    # println("Alingment 100 vs 100")
+
+    println("Started aligning")
     for (ref_id, ref) in enumerate(refs)
+        println("Working on ref: ", ref_id)
         align_forward_and_reverse(Int32(ref_id), color, ca, sa, ref, inv_sa_perm, lcp)
     end 
 
-    println("\n Results")
-    for i in eachindex(ca)
-        println(ca[i], " max len: ", color.len[i], " from: ", color.origin[i])
-    end
-
-    #return color
-
+    # Just to check if it did something :)
+    println(count(x->x>0, color.len))
+    println(count(x->x>0, color.origin))
 end
 
-test()
 
-# To use the file below
-# function main() 
-#     #f = "/media/codegodz/TOSHIBA EXT/staph_cuttlefish_graph.gfa_reduced.cf_seq_head-50000"
-#     f = "sub_test.txt"
-#     queries = Vector{Vector{Int32}}()
-#     refs = Vector{Vector{Int32}}()
-#     count = 0
-#     qs_done = false
-#     q_include = 50
-#     max_count = 70
-#     last_genome_id = ""
-#     for line in eachline(f) 
-#         identifier, path = split(line, "\t")
-#         tag, genome_id, contig_id = split(identifier, "_")
-#         # Get the numbers from the path 
-#         nodes = Int32[]
-#         for node in split(path, " ")
-#             if node[end] == '+'
-#                 mult = 1
-#             else 
-#                 mult = -1
-#             end 
-#             node_id = parse(Int32, node[1:length(node)-1]) * mult
-#             push!(nodes, node_id)
-#         end
+function main() 
+    #f = "/media/codegodz/TOSHIBA EXT/staph_cuttlefish_graph.gfa_reduced.cf_seq_head-50000"
+    f = "sub_test.txt"
+    queries = Vector{Vector{Int32}}()
+    refs = Vector{Vector{Int32}}()
+    count = 0
+    qs_done = false
+    q_include = 5
+    max_count = 6
+    last_genome_id = ""
+    for line in eachline(f) 
+        identifier, path = split(line, "\t")
+        tag, genome_id, contig_id = split(identifier, "_")
+        # Get the numbers from the path 
+        nodes = Int32[]
+        for node in split(path, " ")
+            if node[end] == '+'
+                mult = 1
+            else 
+                mult = -1
+            end 
+            node_id = parse(Int32, node[1:length(node)-1]) * mult
+            push!(nodes, node_id)
+        end
 
-#         if genome_id != last_genome_id
-#             count += 1
-#             if count == q_include
-#                 qs_done = true
-#             end
-#             last_genome_id = genome_id
-#         end
+        if genome_id != last_genome_id
+            count += 1
+            if count == q_include
+                qs_done = true
+            end
+            last_genome_id = genome_id
+        end
 
-#         # Store them
-#         if !qs_done
-#            # println("q: ", count)
-#             push!(queries, nodes)
-#         else 
-#            # println("r: ", count)
-#             push!(refs, nodes)
-#         end
-#        # println(count)
-#         count == max_count && break
-#     end
-#     # Call suffix 
-#     println("Start aln")
-#     test(queries, refs)
-# end
+        # Store them
+        if !qs_done
+            #println("q: ", count)
+            push!(queries, nodes)
+        else 
+            #println("r: ", count)
+            push!(refs, nodes)
+        end
+       # println(count)
+        count == max_count && break
+    end
+    # Call suffix 
+    println("Start aln")
+    test(queries, refs)
+end
 
-# #main()
+main()
 
