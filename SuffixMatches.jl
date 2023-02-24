@@ -103,6 +103,43 @@ function inverse_perm_sa(sa::Vector{Int32})
     return inv_sa_perm
 end
 
+function update_color!(color::Color, ref_id::Int32, match_start::Int32, match_size::Int32)
+    match_end = match_start+match_size-1
+    for i in match_start:match_end
+        if color.len[i] < match_size 
+            color.len[i]  = match_size
+            color.origin[i] = ref_id
+        end
+    end
+end
+
+function reverse_complement_ref!(ref::Vector{Int32})
+    reverse!(ref)
+    @inbounds for i in eachindex(ref)
+        ref[i] = flipnode(ref[i])
+    end
+end
+
+function convert_nodes!(in_vector::Vector{Int32})
+    for i in eachindex(in_vector)
+        in_vector[i] = convert_node(in_vector[i])
+    end
+end
+
+# Check left and right from insert point to see if we have a match
+function decide_on_seed(insert_point::Int32, ca::Vector{Int32}, sa::Vector{Int32}, ref::AbstractVector{Int32}, ref_start::Int32)
+    # Check left for a match
+    left_of_ip = insert_point > 1 ? check_this_point(ca, sa, view(ref, ref_start:length(ref)), Int32(1), insert_point-Int32(1),  Int32(0)) : 0 
+    left_of_ip > 0 && return insert_point-Int32(1), Int32(left_of_ip)
+
+    # Check right for a match, no need to check if it's outside the bounds of the SA <= length(sa)
+    right_of_ip = insert_point <= length(sa) ? check_this_point(ca, sa, view(ref, ref_start:length(ref)), Int32(1), insert_point, Int32(0)) : 0
+    right_of_ip > 0 && return insert_point, Int32(right_of_ip)
+
+    # Neither actually matches our Ref, return 0,0 to move on to the next one
+    return Int32(0), Int32(0)
+end
+
 function matches_till(ref::AbstractVector{Int32}, ref_start::Int32, ca::Vector{Int32}, q_start::Int32)
     (ref_start > length(ref) || q_start > length(ca)) && return 0
     smallest_n = min(length(ref)-ref_start+1, length(ca)-q_start+1)
@@ -140,43 +177,6 @@ function extend_from_point!(ca::Vector{Int32}, sa::Vector{Int32}, ref::Vector{In
   
 end
 
-# Check left and right from insert point to see if we have a match
-function decide_on_seed(insert_point::Int32, ca::Vector{Int32}, sa::Vector{Int32}, ref::AbstractVector{Int32}, ref_start::Int32)
-    # Check left for a match
-    left_of_ip = insert_point > 1 ? check_this_point(ca, sa, view(ref, ref_start:length(ref)), Int32(1), insert_point-Int32(1),  Int32(0)) : 0 
-    left_of_ip > 0 && return insert_point-Int32(1), Int32(left_of_ip)
-
-    # Check right for a match, no need to check if it's outside the bounds of the SA <= length(sa)
-    right_of_ip = insert_point <= length(sa) ? check_this_point(ca, sa, view(ref, ref_start:length(ref)), Int32(1), insert_point, Int32(0)) : 0
-    right_of_ip > 0 && return insert_point, Int32(right_of_ip)
-
-    # Neither actually matches our Ref, return 0,0 to move on to the next one
-    return Int32(0), Int32(0)
-end
-
-function update_color!(color::Color, ref_id::Int32, match_start::Int32, match_size::Int32)
-    match_end = match_start+match_size-1
-    for i in match_start:match_end
-        if color.len[i] < match_size 
-            color.len[i]  = match_size
-            color.origin[i] = ref_id
-        end
-    end
-end
-
-function reverse_complement_ref!(ref::Vector{Int32})
-    reverse!(ref)
-    @inbounds for i in eachindex(ref)
-        ref[i] = flipnode(ref[i])
-    end
-end
-
-function convert_nodes!(in_vector::Vector{Int32})
-    for i in eachindex(in_vector)
-        in_vector[i] = convert_node(in_vector[i])
-    end
-end
-
 function align(ref_id::Int32, color::Color, ca::Vector{Int32}, sa::Vector{Int32}, ref::Vector{Int32}, inv_perm_sa::Vector{Int32}, lcp::Vector{Int32})
     max_match_index = Int32(0)
     max_match_size = Int32(0)
@@ -206,7 +206,7 @@ function align(ref_id::Int32, color::Color, ca::Vector{Int32}, sa::Vector{Int32}
                 ref_start += Int32(1)
             end 
         else 
-            # No match at current point, move +1 to binary search again
+            # No match at current point, move +1 to do a binary search again
             ref_start += Int32(1)
         end
     end
@@ -223,6 +223,8 @@ end
 
 function test(qs, refs)
     println("Building data structures")
+    println("Qs: ", length(qs))
+    println("Refs: ", length(refs))
     ca, sa = @time create_k_suffix_array(qs, Int32(0))
     inv_sa_perm = @time inverse_perm_sa(sa)
     lcp = @time build_lcp(sa, ca)
@@ -233,7 +235,6 @@ function test(qs, refs)
 
     println("Started aligning")
     for (ref_id, ref) in enumerate(refs)
-        println("Working on ref: ", ref_id)
         align_forward_and_reverse(Int32(ref_id), color, ca, sa, ref, inv_sa_perm, lcp)
     end 
 
@@ -277,10 +278,8 @@ function main()
 
         # Store them
         if !qs_done
-            println("q: ", count)
             push!(queries, nodes)
         else 
-            println("r: ", count)
             push!(refs, nodes)
         end
         count == max_count && break
