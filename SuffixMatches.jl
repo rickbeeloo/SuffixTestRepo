@@ -197,7 +197,7 @@ function align(ref_id::Int32, color::Color, ca::Vector{Int32}, sa::Vector{Int32}
 
         # If we have a match keep using the linked list to extend 
         if max_match_size > 0 
-            while matches && ref_start <= length(ref)
+            while ref_start <= length(ref)
                 # Check the match size at this point
                 max_match_size = check_this_point(ca, sa, ref, ref_start, max_match_index, Int32(max_match_size-1)) # skip k-1
                 
