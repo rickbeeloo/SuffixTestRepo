@@ -106,7 +106,7 @@ end
 function matches_till(ref::AbstractVector{Int32}, ref_start::Int32, ca::Vector{Int32}, q_start::Int32)
     (ref_start > length(ref) || q_start > length(ca)) && return 0
     smallest_n = min(length(ref)-ref_start+1, length(ca)-q_start+1)
-    for i in 1:smallest_n
+    for i::Int32 in 1:smallest_n
         if ref[ref_start + i - 1] != ca[q_start+i-1]
             return Int32(i - 1)
         end 
@@ -119,34 +119,42 @@ function check_this_point(ca::Vector{Int32}, sa::Vector{Int32}, ref::AbstractVec
     ca_suffix_index = sa[point]
     ca_start = ca_suffix_index + skip
     ref_start = ref_start + skip
-    match_size = matches_till(ref, ref_start, ca, ca_start) + skip
+    match_size = matches_till(ref, ref_start, ca, ca_start) 
+    match_size += skip 
+    #match_size > 0 && println("INIT (M): Match at: ", point, " of size: ", match_size)
     return match_size
 end
 
 function extend_from_point!(ca::Vector{Int32}, sa::Vector{Int32}, ref::Vector{Int32}, lcp::Vector{Int32}, point::Int32, forward::Bool, ref_start::Int32, match_size::Int32, ref_id::Int32, color::Color)
+    # When we have a seeding point we have to extend in both directions
     move_dir = forward ? 1 : -1
     lcp_dir  = forward ? 0 :  1
-    
+    matches = 0
+
     i = point += move_dir
+    #println("Working on forward: ", forward)
     while i >= 1 && i < length(sa) && lcp[i + lcp_dir] > 0
         # We can skip the LCP part when extending, note though we also have to 
         # check the previous match size so min(lcp valu, prev match size)
         start_check_from = Int32(min(lcp[i + lcp_dir], match_size))
         # Check the size of this match starting from +1 of the LCP value)
         match_size = check_this_point(ca, sa, ref, ref_start, Int32(i), start_check_from )
+        # Store the match 
         update_color!(color, ref_id, sa[i], Int32(match_size))
+       # println("(M): Match at: ", sa[i], " -->  ", sa[i] + match_size-1)
+        matches +=1
         i += move_dir        
     end
-  
+   # println("exited loop")
+    return matches
 end
 
-# Check left and right from insert point to see if we have a match
 function decide_on_seed(insert_point::Int32, ca::Vector{Int32}, sa::Vector{Int32}, ref::AbstractVector{Int32}, ref_start::Int32)
     # Check left for a match
     left_of_ip = insert_point > 1 ? check_this_point(ca, sa, view(ref, ref_start:length(ref)), Int32(1), insert_point-Int32(1),  Int32(0)) : 0 
     left_of_ip > 0 && return insert_point-Int32(1), Int32(left_of_ip)
 
-    # Check right for a match, no need to check if it's outside the bounds of the SA <= length(sa)
+    # Check right for a match, no need to check if it's outside the bounds of the SA ,<= length(sa)
     right_of_ip = insert_point <= length(sa) ? check_this_point(ca, sa, view(ref, ref_start:length(ref)), Int32(1), insert_point, Int32(0)) : 0
     right_of_ip > 0 && return insert_point, Int32(right_of_ip)
 
@@ -190,7 +198,7 @@ function align(ref_id::Int32, color::Color, ca::Vector{Int32}, sa::Vector{Int32}
         # If we have a match keep using the linked list to extend 
         if max_match_size > 0 
             while ref_start <= length(ref)
-                # Check the match size at this point 
+                # Check the match size at this point
                 max_match_size = check_this_point(ca, sa, ref, ref_start, max_match_index, Int32(max_match_size-1)) # skip k-1
                 
                 # If we don't have any match we don't have to check the flanks
@@ -206,7 +214,6 @@ function align(ref_id::Int32, color::Color, ca::Vector{Int32}, sa::Vector{Int32}
                 ref_start += Int32(1)
             end 
         else 
-            # No match at current point, move +1 to binary search again
             ref_start += Int32(1)
         end
     end
@@ -244,13 +251,14 @@ end
 
 
 function main() 
+    #f = "/media/codegodz/TOSHIBA EXT/staph_cuttlefish_graph.gfa_reduced.cf_seq_head-50000"
     f = "sub_test.txt"
     queries = Vector{Vector{Int32}}()
     refs = Vector{Vector{Int32}}()
     count = 0
     qs_done = false
     q_include = 5
-    max_count = 11
+    max_count = 6
     last_genome_id = ""
     for line in eachline(f) 
         identifier, path = split(line, "\t")
@@ -277,12 +285,13 @@ function main()
 
         # Store them
         if !qs_done
-            println("q: ", count)
+            #println("q: ", count)
             push!(queries, nodes)
         else 
-            println("r: ", count)
+            #println("r: ", count)
             push!(refs, nodes)
         end
+       # println(count)
         count == max_count && break
     end
     # Call suffix 
