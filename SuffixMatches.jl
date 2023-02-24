@@ -137,7 +137,6 @@ function extend_from_point!(ca::Vector{Int32}, sa::Vector{Int32}, ref::Vector{In
         # We can skip the LCP part when extending, note though we also have to 
         # check the previous match size so min(lcp valu, prev match size)
         start_check_from = Int32(min(lcp[i + lcp_dir], match_size))
-      #  println("Skipping: ", start_check_from, " chosen from: ", lcp[i + lcp_dir], " and ", match_size)
         # Check the size of this match starting from +1 of the LCP value)
         match_size = check_this_point(ca, sa, ref, ref_start, Int32(i), start_check_from )
         # Store the match 
@@ -193,7 +192,6 @@ function align(ref_id::Int32, color::Color, ca::Vector{Int32}, sa::Vector{Int32}
     while ref_start <= length(ref)
 
         # Do binary search to locate the insert point
-       # println("\nBinary searching for: ", view(ref, ref_start:length(ref)))
         insert_point = locate_insert_point(sa, ca, view(ref, ref_start:length(ref)))
         max_match_index, max_match_size = decide_on_seed(insert_point, ca, sa, ref, ref_start)
 
@@ -201,13 +199,11 @@ function align(ref_id::Int32, color::Color, ca::Vector{Int32}, sa::Vector{Int32}
         if max_match_size > 0 
             matches = true 
             while matches && ref_start <= length(ref)
-               # println("Working on (in loop): ", view(ref, ref_start:length(ref)))
                 # Check the match size at this point
                 max_match_size = check_this_point(ca, sa, ref, ref_start, max_match_index, Int32(max_match_size-1)) # skip k-1
                 
                 # If we don't have any match we don't have to check the flanks
                 max_match_size == 0 && break 
-               # println("(M): ", sa[max_match_index], " -> ", sa[max_match_index] + max_match_size - 1 )
                 update_color!(color, ref_id, sa[max_match_index], Int32(max_match_size))
                               
                 # Check up and down in suffix array for other matches
@@ -215,14 +211,8 @@ function align(ref_id::Int32, color::Color, ca::Vector{Int32}, sa::Vector{Int32}
                 extend_from_point!(ca, sa, ref, lcp, max_match_index, true, ref_start, Int32(max_match_size), ref_id, color)
 
                 # # Move to next location in suffix array for the second around
-                ref_start += Int32(1)
-                println("max match index: ", max_match_index)
-                println("max match index (ca): ", sa[max_match_index])
-                println("inv per: ", inv_perm_sa)
-                #max_match_index == length(sa) && break
                 max_match_index = inv_perm_sa[sa[max_match_index]+1]
-               # println("Would just jump to: ", max_match_index)
-                
+                ref_start += Int32(1)
             end 
         else 
             ref_start += Int32(1)
@@ -283,6 +273,7 @@ function test()
         align_forward_and_reverse(Int32(ref_id), color, ca, sa, ref, inv_sa_perm, lcp)
     end 
 
+    println("\n Results")
     for i in eachindex(ca)
         println(ca[i], " max len: ", color.len[i], " from: ", color.origin[i])
     end
