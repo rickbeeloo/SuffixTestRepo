@@ -175,6 +175,7 @@ function extend_from_point!(ca::Vector{Int32}, sa::Vector{Int32}, ref::Vector{In
         start_check_from = Int32(min(lcp[i + lcp_dir], match_size))
         # Check the size of this match starting from +1 of the LCP value)
         match_size = check_this_point(ca, sa, ref, ref_start, Int32(i), start_check_from )
+        println(match_size)
         update_color!(color, ref_id, sa[i], Int32(match_size), ca)
         i += move_dir        
     end
