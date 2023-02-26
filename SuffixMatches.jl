@@ -1,9 +1,6 @@
 
 const LIBSAIS = "/home/codegodz/tools/fais/libsais/libsais.so.2"
 
-using Profile 
-using ProfileView
-
 
 const MASK = Int32(1<<30) 
 flipnode(n::Int32) = n ⊻ MASK
@@ -111,7 +108,7 @@ function update_color!(color::Color, ref_id::Int32, match_start::Int32, match_si
     color.len[1] = ref_id
     match_end = match_start+match_size-1
     match_size_nt = sum(get.(Ref(color.size_map), view(ca, match_start:match_end), 0))
-    # match_size_nt = match_size
+    #match_size_nt = match_size 
     for i in match_start:match_end
         if color.len[i] < match_size_nt 
             color.len[i]  = match_size_nt
@@ -263,110 +260,26 @@ end
 function run(gfa::String, query_file::String) 
     queries = processGFA(gfa, query_file)
     ca, sa = create_k_suffix_array(queries, Int32(0))
+    println(length(ca))
     inv_sa_perm = inverse_perm_sa(sa)
     lcp = build_lcp(sa, ca)
     unique_nodes = Set(ca)
-    size_map = Dict(unique_nodes .=> UInt32.(rand(1:10, length(unique_nodes))))
+    size_map = Dict(unique_nodes .=> UInt32.(rand(1:1000, length(unique_nodes))))
     len = zeros(Int32, length(ca))
     ori = zeros(Int32, length(ca))
     color = Color(len, ori, size_map)
 
-    @profview for (ref_id, line) in enumerate(eachline(gfa))
+    for (ref_id, line) in enumerate(eachline(gfa))
         identifier, path = split(line, "\t")
-        println(identifier)
-        path_numbers = parse_numbers(path)
-        align_forward_and_reverse(Int32(ref_id), color, ca, sa, path_numbers, inv_sa_perm, lcp)
+        if identifier == "Reference:1_Sequence:1004953.3_ANPO01000001"
+            path_numbers = parse_numbers(path)
+            println("Ref size: ", length(path_numbers))
+            println(identifier, " ")
+            @time align_forward_and_reverse(Int32(ref_id), color, ca, sa, path_numbers, inv_sa_perm, lcp)
+            break
+        end
     end
 end
 
-@time run("sub_test.txt", "query_ids.txt")
-
-# function test()
-#     println("Building data structures")
-#     qs = [ Int32[1,2,3,10], Int32[90,1,1,1,2,3,100], Int32[34234234,34234]]
-#     refs = [ Int32[1,2,3,10], Int32[-1,-1,-1,1]]
-#     println("Qs: ", length(qs))
-#     println("Refs: ", length(refs))
-#     ca, sa = @time create_k_suffix_array(qs, Int32(0))
-#     println(ca)
-#     println("\nSuffix array")
-#     for (i, si ) in enumerate(sa)
-#         println(i, " -> ", view(ca, si:length(ca)))
-#     end
-#     inv_sa_perm = @time inverse_perm_sa(sa)
-#     lcp = @time build_lcp(sa, ca)
-
-#     # Create random lengths 
-#     unique_nodes = Set(ca)
-#     size_map = Dict(unique_nodes .=> UInt32.(rand(1:10, length(unique_nodes))))
-#     println(size_map)
-
-#      len = zeros(Int32, length(ca))
-#      ori = zeros(Int32, length(ca))
-#      color = Color(len, ori, size_map)
-
-#     println("Started aligning")
-#     for (ref_id, ref) in enumerate(refs)
-#         align_forward_and_reverse(Int32(ref_id), color, ca, sa, ref, inv_sa_perm, lcp)
-#     end 
-
-#     # Just to check if it did something :)
-#     println(count(x->x>0, color.len))
-#     println(count(x->x>0, color.origin))
-#     println("Result")
-#     println(Int64.(color.len))
-#     println(color.origin)
-# end
-
-# test() 
-
-
- 
-# function main() 
-#     f = "sub_test.txt"
-#     queries = Vector{Vector{Int32}}()
-#     refs = Vector{Vector{Int32}}()
-#     count = 0
-#     qs_done = false
-#     q_include = 5
-#     max_count = 11
-#     last_genome_id = ""
-#     for line in eachline(f) 
-#         identifier, path = split(line, "\t")
-#         tag, genome_id, contig_id = split(identifier, "_")
-#         # Get the numbers from the path 
-#         nodes = Int32[]
-#         for node in split(path, " ")
-#             if node[end] == '+'
-#                 mult = 1
-#             else 
-#                 mult = -1
-#             end 
-#             node_id = parse(Int32, node[1:length(node)-1]) * mult
-#             push!(nodes, node_id)
-#         end
-
-#         if genome_id != last_genome_id
-#             count += 1
-#             if count == q_include
-#                 qs_done = true
-#             end
-#             last_genome_id = genome_id
-#         end
-
-#         # Store them
-#         if !qs_done
-#             push!(queries, nodes)
-#         else 
-#             push!(refs, nodes)
-#         end
-#         count == max_count && break
-#     end
-#     # Call suffix 
-#     println("Start aln")
-#     test(queries, refs)
-# end
-
-# main()
-
+run("sub_test.txt", "query_ids.txt")
 
