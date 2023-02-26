@@ -1,8 +1,11 @@
 
 const LIBSAIS = "/home/codegodz/tools/fais/libsais/libsais.so.2"
+
+using Profile 
+using ProfileView
+
+
 const MASK = Int32(1<<30) 
-
-
 flipnode(n::Int32) = n ⊻ MASK
 isflipped(n::Int32) = ifelse(n & MASK != 0, true, false)
 noflip(n::Int32) = n & (MASK - 1)
@@ -10,7 +13,8 @@ convert_node(n::Int32) = n < 0 ? flipnode(abs(n)) : noflip(n)
 
 struct Color 
     origin::Vector{Int32}
-    len::Vector{Int32}
+    len::Vector{UInt32}
+    size_map::Dict{Int32, UInt32}
 end
 
 function concat_with_seperator(vectors::Vector{Vector{Int32}})
@@ -103,11 +107,14 @@ function inverse_perm_sa(sa::Vector{Int32})
     return inv_sa_perm
 end
 
-function update_color!(color::Color, ref_id::Int32, match_start::Int32, match_size::Int32)
+function update_color!(color::Color, ref_id::Int32, match_start::Int32, match_size::Int32, ca::Vector{Int32})
+    color.len[1] = ref_id
     match_end = match_start+match_size-1
+    match_size_nt = sum(get.(Ref(color.size_map), view(ca, match_start:match_end), 0))
+    # match_size_nt = match_size
     for i in match_start:match_end
-        if color.len[i] < match_size 
-            color.len[i]  = match_size
+        if color.len[i] < match_size_nt 
+            color.len[i]  = match_size_nt
             color.origin[i] = ref_id
         end
     end
@@ -165,16 +172,15 @@ function extend_from_point!(ca::Vector{Int32}, sa::Vector{Int32}, ref::Vector{In
     lcp_dir  = forward ? 0 :  1
     
     i = point += move_dir
-    while i >= 1 && i < length(sa) && lcp[i + lcp_dir] > 0
+    while i > 1 && i <= length(sa) && lcp[i + lcp_dir] > 0
         # We can skip the LCP part when extending, note though we also have to 
         # check the previous match size so min(lcp valu, prev match size)
         start_check_from = Int32(min(lcp[i + lcp_dir], match_size))
         # Check the size of this match starting from +1 of the LCP value)
         match_size = check_this_point(ca, sa, ref, ref_start, Int32(i), start_check_from )
-        update_color!(color, ref_id, sa[i], Int32(match_size))
+        update_color!(color, ref_id, sa[i], Int32(match_size), ca)
         i += move_dir        
     end
-  
 end
 
 function align(ref_id::Int32, color::Color, ca::Vector{Int32}, sa::Vector{Int32}, ref::Vector{Int32}, inv_perm_sa::Vector{Int32}, lcp::Vector{Int32})
@@ -195,7 +201,7 @@ function align(ref_id::Int32, color::Color, ca::Vector{Int32}, sa::Vector{Int32}
                 
                 # If we don't have any match we don't have to check the flanks
                 max_match_size == 0 && break 
-                update_color!(color, ref_id, sa[max_match_index], Int32(max_match_size))
+                update_color!(color, ref_id, sa[max_match_index], Int32(max_match_size), ca)
                               
                 # Check up and down in suffix array for other matches
                 extend_from_point!(ca, sa, ref, lcp, max_match_index, false, ref_start, Int32(max_match_size), ref_id, color)
@@ -214,80 +220,153 @@ end
 
 function align_forward_and_reverse(ref_id::Int32, color::Color, ca::Vector{Int32}, sa::Vector{Int32}, ref::Vector{Int32}, inv_perm_sa::Vector{Int32}, lcp::Vector{Int32})
     # First do the forward align 
-    convert_nodes!(ref)
+    # convert_nodes!(ref)
     align(ref_id, color, ca, sa, ref, inv_perm_sa,lcp)
     # Flip the nodes and reverse to do the reverse alignment 
     reverse_complement_ref!(ref)
     align(ref_id, color, ca, sa, ref, inv_perm_sa,lcp)
 end
 
-function test(qs, refs)
-    println("Building data structures")
-    println("Qs: ", length(qs))
-    println("Refs: ", length(refs))
-    ca, sa = @time create_k_suffix_array(qs, Int32(0))
-    inv_sa_perm = @time inverse_perm_sa(sa)
-    lcp = @time build_lcp(sa, ca)
-
-     len = zeros(Int32, length(ca))
-     ori = zeros(Int32, length(ca))
-     color = Color(len, ori)
-
-    println("Started aligning")
-    for (ref_id, ref) in enumerate(refs)
-        align_forward_and_reverse(Int32(ref_id), color, ca, sa, ref, inv_sa_perm, lcp)
+function parse_numbers(path::AbstractString)
+    numbers = Vector{Int32}()
+    for node in split(path, " ")
+        number = parse(Int32, view(node, 1:length(node)-1))
+        number = node[end] == "-" ? flipnode(number) : noflip(number)
+        push!(numbers, number)
     end 
-
-    # Just to check if it did something :)
-    println(count(x->x>0, color.len))
-    println(count(x->x>0, color.origin))
+    return numbers
 end
 
-
-function main() 
-    f = "sub_test.txt"
+function read_queries(f::String, query_ids::Set{String})
     queries = Vector{Vector{Int32}}()
-    refs = Vector{Vector{Int32}}()
-    count = 0
-    qs_done = false
-    q_include = 5
-    max_count = 11
-    last_genome_id = ""
-    for line in eachline(f) 
+    for (i, line) in enumerate(eachline(f))
         identifier, path = split(line, "\t")
-        tag, genome_id, contig_id = split(identifier, "_")
-        # Get the numbers from the path 
-        nodes = Int32[]
-        for node in split(path, " ")
-            if node[end] == '+'
-                mult = 1
-            else 
-                mult = -1
-            end 
-            node_id = parse(Int32, node[1:length(node)-1]) * mult
-            push!(nodes, node_id)
+        if identifier in query_ids
+            path_numbers = parse_numbers(path)
+            push!(query_ids, identifier)
+            push!(queries, path_numbers)
         end
-
-        if genome_id != last_genome_id
-            count += 1
-            if count == q_include
-                qs_done = true
-            end
-            last_genome_id = genome_id
-        end
-
-        # Store them
-        if !qs_done
-            push!(queries, nodes)
-        else 
-            push!(refs, nodes)
-        end
-        count == max_count && break
     end
-    # Call suffix 
-    println("Start aln")
-    test(queries, refs)
+    return queries
 end
 
-main()
+function processGFA(gfa::String, query_file::String)
+    # Read the query ids from the file 
+    query_ids = Set{String}()
+    for line in eachline(query_file)
+        push!(query_ids, strip(line))
+    end
+    queries = read_queries(gfa, query_ids)
+    return queries
+end
+
+function run(gfa::String, query_file::String) 
+    queries = processGFA(gfa, query_file)
+    ca, sa = create_k_suffix_array(queries, Int32(0))
+    inv_sa_perm = inverse_perm_sa(sa)
+    lcp = build_lcp(sa, ca)
+    unique_nodes = Set(ca)
+    size_map = Dict(unique_nodes .=> UInt32.(rand(1:10, length(unique_nodes))))
+    len = zeros(Int32, length(ca))
+    ori = zeros(Int32, length(ca))
+    color = Color(len, ori, size_map)
+
+    @profview for (ref_id, line) in enumerate(eachline(gfa))
+        identifier, path = split(line, "\t")
+        println(identifier)
+        path_numbers = parse_numbers(path)
+        align_forward_and_reverse(Int32(ref_id), color, ca, sa, path_numbers, inv_sa_perm, lcp)
+    end
+end
+
+@time run("sub_test.txt", "query_ids.txt")
+
+# function test()
+#     println("Building data structures")
+#     qs = [ Int32[1,2,3,10], Int32[90,1,1,1,2,3,100], Int32[34234234,34234]]
+#     refs = [ Int32[1,2,3,10], Int32[-1,-1,-1,1]]
+#     println("Qs: ", length(qs))
+#     println("Refs: ", length(refs))
+#     ca, sa = @time create_k_suffix_array(qs, Int32(0))
+#     println(ca)
+#     println("\nSuffix array")
+#     for (i, si ) in enumerate(sa)
+#         println(i, " -> ", view(ca, si:length(ca)))
+#     end
+#     inv_sa_perm = @time inverse_perm_sa(sa)
+#     lcp = @time build_lcp(sa, ca)
+
+#     # Create random lengths 
+#     unique_nodes = Set(ca)
+#     size_map = Dict(unique_nodes .=> UInt32.(rand(1:10, length(unique_nodes))))
+#     println(size_map)
+
+#      len = zeros(Int32, length(ca))
+#      ori = zeros(Int32, length(ca))
+#      color = Color(len, ori, size_map)
+
+#     println("Started aligning")
+#     for (ref_id, ref) in enumerate(refs)
+#         align_forward_and_reverse(Int32(ref_id), color, ca, sa, ref, inv_sa_perm, lcp)
+#     end 
+
+#     # Just to check if it did something :)
+#     println(count(x->x>0, color.len))
+#     println(count(x->x>0, color.origin))
+#     println("Result")
+#     println(Int64.(color.len))
+#     println(color.origin)
+# end
+
+# test() 
+
+
+ 
+# function main() 
+#     f = "sub_test.txt"
+#     queries = Vector{Vector{Int32}}()
+#     refs = Vector{Vector{Int32}}()
+#     count = 0
+#     qs_done = false
+#     q_include = 5
+#     max_count = 11
+#     last_genome_id = ""
+#     for line in eachline(f) 
+#         identifier, path = split(line, "\t")
+#         tag, genome_id, contig_id = split(identifier, "_")
+#         # Get the numbers from the path 
+#         nodes = Int32[]
+#         for node in split(path, " ")
+#             if node[end] == '+'
+#                 mult = 1
+#             else 
+#                 mult = -1
+#             end 
+#             node_id = parse(Int32, node[1:length(node)-1]) * mult
+#             push!(nodes, node_id)
+#         end
+
+#         if genome_id != last_genome_id
+#             count += 1
+#             if count == q_include
+#                 qs_done = true
+#             end
+#             last_genome_id = genome_id
+#         end
+
+#         # Store them
+#         if !qs_done
+#             push!(queries, nodes)
+#         else 
+#             push!(refs, nodes)
+#         end
+#         count == max_count && break
+#     end
+#     # Call suffix 
+#     println("Start aln")
+#     test(queries, refs)
+# end
+
+# main()
+
 
